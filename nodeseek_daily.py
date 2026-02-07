@@ -7,15 +7,18 @@ See LICENSE file in the project root for full license information.
 import os
 import requests
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import random
 import time
 import traceback
-import undetected_chromedriver as uc
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
+from webdriver_manager.chrome import ChromeDriverManager
 
 ns_random = os.environ.get("NS_RANDOM","false")
 cookie = os.environ.get("NS_COOKIE") or os.environ.get("COOKIE")
@@ -188,7 +191,7 @@ def setup_driver_and_cookies():
             return None
             
         print("开始初始化浏览器...")
-        options = uc.ChromeOptions()
+        options = Options()
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
@@ -197,20 +200,24 @@ def setup_driver_and_cookies():
         if headless:
             print("启用无头模式...")
             options.add_argument('--headless=new')
-            options.add_argument('--disable-blink-features=AutomationControlled')
             options.add_argument('--window-size=1920,1080')
             options.add_argument('--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         
+        # 禁用自动化控制标记
+        options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        options.add_experimental_option('useAutomationExtension', False)
+        
         print("正在启动Chrome...")
-        # 让 undetected-chromedriver 自动检测并匹配 Chrome 版本
-        driver = uc.Chrome(
-            options=options,
-            use_subprocess=True,
-            version_main=None  # 自动检测 Chrome 版本
-        )
+        # 使用 webdriver-manager 自动管理 ChromeDriver 版本
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # 修改 webdriver 标记
+        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+            'source': "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        })
         
         if headless:
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             driver.set_window_size(1920, 1080)
         
         print("Chrome启动成功")
