@@ -13,6 +13,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 import random
 import time
 from datetime import datetime, timezone, timedelta
@@ -213,6 +214,8 @@ def click_sign_icon(driver):
         
         # 2. 尝试定位签到面板（.board-intro）
         try:
+            # 等待签到面板加载（黄色背景区域）
+            # 缩短等待时间，因为如果没加载出来，可能是已签到或者样式变了
             board_intro = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".board-intro"))
             )
@@ -256,6 +259,16 @@ def click_sign_icon(driver):
             print("⚠️ 未找到签到面板 (.board-intro)，尝试全局文本搜索...")
             
             # 3. 兜底策略：全局搜索文本
+            # 有时候 .board-intro 加载慢或者结构变了，直接找关键文本
+            try:
+                # 检查是否存在包含"今日签到获得"的元素
+                success_msg = driver.find_elements(By.XPATH, "//*[contains(text(), '今日签到获得') or contains(text(), '当前排名')]")
+                if success_msg:
+                    print(f"✅ 通过文本发现已签到信息: {success_msg[0].text}")
+                    return "already"
+            except:
+                pass
+
             page_text = driver.find_element(By.TAG_NAME, "body").text
             if "今日已签到" in page_text or "签到成功" in page_text or "本次获得" in page_text:
                 print("✅ 全局文本检测到 '已签到' 相关字样")
