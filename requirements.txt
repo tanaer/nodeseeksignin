@@ -1,6 +1,6 @@
 requests>=2.31.0
 beautifulsoup4>=4.12.3
-camoufox[geoip]>=1.0.0
+camoufox[geoip]>=0.4.11
 2captcha-python>=1.2.0
 python-telegram-bot>=20.0
 redis>=5.0.0
