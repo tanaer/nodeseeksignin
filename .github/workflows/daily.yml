@@ -21,29 +21,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Chrome and dependencies
+      - name: Install system dependencies
         run: |
-          # 安装依赖
           sudo apt-get update
-          sudo apt-get install -y wget gnupg xvfb
-          
-          # 添加 Google Chrome 官方源
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-          
-          # 安装稳定版 Chrome
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          
-          echo "Chrome version:"
-          google-chrome --version
+          sudo apt-get install -y xvfb fonts-wqy-zenhei
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y fonts-wqy-zenhei
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Fetch Camoufox browser binary
+        run: |
+          python -m camoufox fetch
 
       - name: Run NodeSeek script
         env:
@@ -54,6 +44,6 @@ jobs:
           NS_DELAY_MAX: ${{ vars.NS_DELAY_MAX }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          HEADLESS: "false"
+          HEADLESS: "true"
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python nodeseek_daily.py
