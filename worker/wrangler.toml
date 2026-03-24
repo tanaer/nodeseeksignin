@@ -8,14 +8,10 @@ crons = ["*/5 * * * *"]
 
 [vars]
 # 非敏感配置可直接写在这里，敏感信息用 wrangler secret put 设置
-# WORKER_URL 部署后需替换为实际 Worker URL
-WORKER_URL = ""
-
 # 以下变量需通过 wrangler secret put 或 CF Dashboard 设置：
 # TG_BOT_TOKEN    - Telegram Bot Token
 # TG_CHAT_ID      - Telegram Chat ID
 # NS_COOKIE       - NodeSeek Cookie
-# REDIS_URL       - Upstash Redis REST URL
-# REDIS_TOKEN     - Upstash Redis REST Token
-# PUSHPLUS_TOKEN   - (可选) PushPlus Token
+# REDIS_URL       - Upstash Redis 连接串 (格式: redis://default:TOKEN@host:port)
+# PUSHPLUS_TOKEN  - (可选) PushPlus Token
 # WEBHOOK_SECRET  - (可选) Webhook 验证密钥
