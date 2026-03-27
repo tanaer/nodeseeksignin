@@ -35,7 +35,7 @@
 
 ### 方式二：Cloudflare Worker 部署（推荐 🚀 免费 + 零运维）
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tanaer/nodeseek-AutoDaily-signin/tree/main/worker)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tanaer/nodeseeksignin/tree/main/worker)
 
 点击上方按钮即可一键部署到你的 Cloudflare 账号。部署后需在 Worker 设置中添加以下 Secrets：
 
@@ -55,8 +55,8 @@
 
 ```bash
 # 1. 克隆仓库并进入 Worker 目录
-git clone https://github.com/tanaer/nodeseek-AutoDaily-signin.git
-cd nodeseek-AutoDaily-signin/worker
+git clone https://github.com/tanaer/nodeseeksignin.git
+cd nodeseeksignin/worker
 
 # 2. 安装依赖
 npm install
@@ -82,8 +82,8 @@ npx wrangler deploy
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/tanaer/nodeseek-AutoDaily-signin.git
-cd nodeseek-AutoDaily-signin
+git clone https://github.com/tanaer/nodeseeksignin.git
+cd nodeseeksignin
 
 # 2. 安装依赖
 pip install -r requirements.txt

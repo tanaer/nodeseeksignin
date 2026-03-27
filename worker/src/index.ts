@@ -71,9 +71,38 @@ export default {
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runScheduledTasks(env));
+    ctx.waitUntil((async () => {
+      // 首次 Cron 自动注册 Webhook
+      await autoRegisterWebhook(env);
+      // 执行巡检
+      await runScheduledTasks(env);
+    })());
   },
 };
+
+// ==================== 自动注册 Webhook ====================
+
+async function autoRegisterWebhook(env: Env): Promise<void> {
+  if (!env.WORKER_URL || !env.TG_BOT_TOKEN) return;
+
+  const db = new DB(env.REDIS_URL);
+  const registered = await db.getConfig('webhook_registered');
+  if (registered === 'true') return;
+
+  try {
+    const webhookUrl = `${env.WORKER_URL}/webhook`;
+    const res = await fetch(
+      `https://api.telegram.org/bot${env.TG_BOT_TOKEN}/setWebhook?url=${encodeURIComponent(webhookUrl)}`
+    );
+    const data: any = await res.json();
+    if (data.ok) {
+      await db.setConfig('webhook_registered', 'true');
+      console.log(`✅ Webhook 自动注册成功: ${webhookUrl}`);
+    }
+  } catch (e) {
+    console.error('Webhook 自动注册失败:', e);
+  }
+}
 
 // ==================== 巡检逻辑 ====================
 
