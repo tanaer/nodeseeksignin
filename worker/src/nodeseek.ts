@@ -1,15 +1,20 @@
 /**
  * NodeSeek HTTP 客户端
- * 通过 fetch + Cookie 直接与 NodeSeek 交互，无需浏览器
+ * 纯 fetch 实现，无需浏览器
  */
 
-const RANDOM_COMMENTS = [
+const BUMP_COMMENTS = [
   'bd', '绑定', '帮顶', '好价', '前排', '公道公道',
   '还可以', '挺不错的 bdbd', '好价 好价', '祝早出',
   '观望一下 早出', 'bd一下', '顶一下', '支持支持',
 ];
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+export interface LastReplyInfo {
+  minutes: number;      // 距今分钟数
+  lastPoster: string;   // 最后回帖人用户名
+}
 
 export class NodeSeek {
   private cookie: string;
@@ -29,90 +34,113 @@ export class NodeSeek {
   }
 
   /**
-   * 获取帖子最后回复距今的分钟数
+   * 获取帖子最后回复信息（距今分钟数 + 最后回帖人）
    */
-  async getLastReplyMinutes(threadId: string): Promise<number> {
+  async getLastReplyInfo(threadId: string): Promise<LastReplyInfo | null> {
     try {
       const res = await fetch(`https://www.nodeseek.com/post-${threadId}-1`, {
         headers: this.headers(),
         redirect: 'follow',
       });
-      if (!res.ok) {
-        console.error(`Fetch thread ${threadId} failed: ${res.status}`);
-        return -1;
-      }
+      if (!res.ok) return null;
 
       const html = await res.text();
 
-      // 从 HTML 中提取所有 <time datetime="..."> 标签
+      // 提取所有 <time datetime="..."> 和对应的用户名
+      // 帖子结构: .post-list-item 包含用户名和时间
       const timeRegex = /<time[^>]+datetime="([^"]+)"/g;
-      let lastMatch: string | null = null;
+      let lastTimeStr: string | null = null;
       let m: RegExpExecArray | null;
       while ((m = timeRegex.exec(html)) !== null) {
-        lastMatch = m[1];
+        lastTimeStr = m[1];
+      }
+      if (!lastTimeStr) return null;
+
+      // 提取最后一个回帖用户名
+      // NodeSeek 帖子中用户名通常在 .post-user-name 或 a[href^="/space/"] 中
+      const userRegex = /class="[^"]*post-user-name[^"]*"[^>]*>([^<]+)</g;
+      let lastPoster = '';
+      let um: RegExpExecArray | null;
+      while ((um = userRegex.exec(html)) !== null) {
+        lastPoster = um[1].trim();
       }
 
-      if (!lastMatch) return -1;
+      // 备选: 从 /space/ 链接提取
+      if (!lastPoster) {
+        const spaceRegex = /<a[^>]+href="\/space\/(\d+)"[^>]*>([^<]+)<\/a>/g;
+        let sm: RegExpExecArray | null;
+        while ((sm = spaceRegex.exec(html)) !== null) {
+          lastPoster = sm[2].trim();
+        }
+      }
 
-      const postTime = new Date(lastMatch).getTime();
-      const now = Date.now();
-      return (now - postTime) / 60000;
+      const postTime = new Date(lastTimeStr).getTime();
+      const minutes = (Date.now() - postTime) / 60000;
+
+      return { minutes, lastPoster };
     } catch (e) {
-      console.error(`getLastReplyMinutes error for ${threadId}:`, e);
-      return -1;
+      console.error(`getLastReplyInfo error for ${threadId}:`, e);
+      return null;
     }
   }
 
   /**
-   * 从页面提取 CSRF Token
+   * 获取当前登录用户名
+   */
+  async getMyUsername(): Promise<string> {
+    try {
+      const res = await fetch('https://www.nodeseek.com', {
+        headers: this.headers(),
+      });
+      const html = await res.text();
+      // 尝试从页面提取当前用户名
+      const match = html.match(/class="[^"]*username[^"]*"[^>]*>([^<]+)</);
+      if (match) return match[1].trim();
+      // 备选
+      const match2 = html.match(/"username"\s*:\s*"([^"]+)"/);
+      if (match2) return match2[1].trim();
+      return '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * 提取 CSRF Token
    */
   private extractCsrfToken(html: string): string | null {
-    // 方案1: 从 meta 标签提取
-    const metaMatch = html.match(/<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"/i);
-    if (metaMatch) return metaMatch[1];
-    // 方案2: 从 window 对象提取
-    const windowMatch = html.match(/csrfToken["']?\s*[:=]\s*["']([^"']+)["']/);
-    if (windowMatch) return windowMatch[1];
-    // 方案3: 从 cookie 中提取 (有些站用 cookie 存 csrf)
-    const cookieMatch = this.cookie.match(/(?:csrf|token)=([^;]+)/i);
-    if (cookieMatch) return cookieMatch[1];
+    const meta = html.match(/<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"/i);
+    if (meta) return meta[1];
+    const win = html.match(/csrfToken["']?\s*[:=]\s*["']([^"']+)["']/);
+    if (win) return win[1];
+    const ck = this.cookie.match(/(?:csrf|token)=([^;]+)/i);
+    if (ck) return ck[1];
     return null;
   }
 
   /**
-   * 顶贴：发送评论到指定帖子
+   * 顶贴：发送评论
    */
   async bumpThread(threadId: string, content?: string): Promise<boolean> {
     try {
-      // 先获取页面提取 CSRF Token
       const pageRes = await fetch(`https://www.nodeseek.com/post-${threadId}-1`, {
         headers: this.headers(),
       });
       const pageHtml = await pageRes.text();
-
-      // 提取帖子的 post_id (需要传给评论 API)
-      const postIdMatch = pageHtml.match(/data-post-id="(\d+)"/);
       const csrfToken = this.extractCsrfToken(pageHtml);
+      const postIdMatch = pageHtml.match(/data-post-id="(\d+)"/);
 
-      const commentText = content || RANDOM_COMMENTS[Math.floor(Math.random() * RANDOM_COMMENTS.length)];
+      const commentText = content || BUMP_COMMENTS[Math.floor(Math.random() * BUMP_COMMENTS.length)];
 
       const apiHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
         Origin: 'https://www.nodeseek.com',
         Referer: `https://www.nodeseek.com/post-${threadId}-1`,
       };
-      if (csrfToken) {
-        apiHeaders['Csrf-Token'] = csrfToken;
-      }
+      if (csrfToken) apiHeaders['Csrf-Token'] = csrfToken;
 
-      const body: any = {
-        content: commentText,
-      };
-
-      // 如果解析到 post_id，传递它
-      if (postIdMatch) {
-        body.post_id = parseInt(postIdMatch[1]);
-      }
+      const body: any = { content: commentText };
+      if (postIdMatch) body.post_id = parseInt(postIdMatch[1]);
 
       const res = await fetch('https://www.nodeseek.com/api/content/new-comment', {
         method: 'POST',
@@ -122,12 +150,9 @@ export class NodeSeek {
 
       if (res.ok) {
         const data: any = await res.json();
-        console.log(`Bump thread ${threadId} response:`, JSON.stringify(data));
         return data.success !== false;
-      } else {
-        console.error(`Bump thread ${threadId} failed: ${res.status}`);
-        return false;
       }
+      return false;
     } catch (e) {
       console.error(`bumpThread error for ${threadId}:`, e);
       return false;
@@ -150,46 +175,29 @@ export class NodeSeek {
         redirect: 'follow',
       });
       if (!res.ok) return null;
-
       const html = await res.text();
 
-      // 解析第一个搜索结果
-      // 标题和链接
-      const titleMatch = html.match(/<a[^>]+href="(\/post-\d+-\d+)"[^>]*class="[^"]*post-title[^"]*"[^>]*>([^<]+)<\/a>/);
-      if (!titleMatch) {
-        // 备选: 更宽泛地匹配帖子链接
-        const altMatch = html.match(/<a[^>]+href="(\/post-\d+-\d+)"[^>]*>([^<]{2,})<\/a>/);
-        if (!altMatch) return null;
-        return this.parseSearchResult(altMatch[1], altMatch[2], html);
-      }
+      // 找第一个帖子链接
+      const titleMatch = html.match(/<a[^>]+href="(\/post-\d+-\d+)"[^>]*class="[^"]*post-title[^"]*"[^>]*>([^<]+)<\/a>/)
+        || html.match(/<a[^>]+href="(\/post-\d+-\d+)"[^>]*>([^<]{2,})<\/a>/);
+      if (!titleMatch) return null;
 
-      return this.parseSearchResult(titleMatch[1], titleMatch[2], html);
+      const link = titleMatch[1];
+      const title = titleMatch[2].trim();
+
+      // 找附近的时间
+      const pos = html.indexOf(link);
+      const nearby = html.substring(Math.max(0, pos - 300), pos + 600);
+      const tm = nearby.match(/<time[^>]+datetime="([^"]+)"/);
+      if (!tm) return null;
+
+      const timeStr = tm[1];
+      const diffMinutes = (Date.now() - new Date(timeStr).getTime()) / 60000;
+
+      return { title, link: `https://www.nodeseek.com${link}`, timeStr, diffMinutes };
     } catch (e) {
       console.error(`searchLatest error for '${keyword}':`, e);
       return null;
     }
-  }
-
-  private parseSearchResult(
-    link: string,
-    title: string,
-    html: string
-  ): { title: string; link: string; timeStr: string; diffMinutes: number } | null {
-    // 找到该链接附近的时间标签
-    const linkPos = html.indexOf(link);
-    const nearbyHtml = html.substring(Math.max(0, linkPos - 200), linkPos + 500);
-    const timeMatch = nearbyHtml.match(/<time[^>]+datetime="([^"]+)"/);
-    if (!timeMatch) return null;
-
-    const timeStr = timeMatch[1];
-    const postTime = new Date(timeStr).getTime();
-    const diffMinutes = (Date.now() - postTime) / 60000;
-
-    return {
-      title: title.trim(),
-      link: `https://www.nodeseek.com${link}`,
-      timeStr,
-      diffMinutes,
-    };
   }
 }
