@@ -85,6 +85,7 @@ export class TelegramBot {
       case '/resume':  return this.handleResume(chatId, parts.slice(1));
       case '/clear':   return this.handleClear(chatId);
       case '/setchat': return this.handleSetChat(chatId, parts.slice(1));
+      case '/autoreply': return this.handleAutoReply(chatId, parts.slice(1));
     }
   }
 
@@ -132,6 +133,13 @@ export class TelegramBot {
       '<code>/watch 关键字 tg|pushplus 冷却分钟</code>',
       '  有新帖时推送通知',
       '<code>/unwatch 任务ID</code>',
+      '',
+      '🤖 <b>自动回帖 (水贴+关键词捡漏)</b>',
+      '<code>/autoreply on 20 鸡腿,收,出</code>',
+      '  开启自动回帖，每日限额20次',
+      '  包含关键字优先回且不计限额',
+      '<code>/autoreply off</code> — 关闭',
+      '<code>/autoreply status</code> — 状态',
       '',
       '⚙️ <b>管理</b>',
       '<code>/list</code> — 任务列表',
@@ -251,6 +259,51 @@ export class TelegramBot {
     const targetChatId = args[0] || String(chatId);
     await this.db.setConfig('notify_chat_id', targetChatId);
     return this.reply(chatId, `✅ 通知目标已设为: <code>${targetChatId}</code>`);
+  }
+
+  // ─── AutoReply ───
+
+  private async handleAutoReply(chatId: number, args: string[]): Promise<void> {
+    const action = args[0]?.toLowerCase();
+    
+    if (action === 'status') {
+      const enabled = await this.db.getConfig('autoreply_enabled');
+      const limit = await this.db.getConfig('autoreply_limit') || '20';
+      const kws = await this.db.getConfig('autoreply_keywords') || '无';
+      return this.reply(chatId, 
+        `🤖 <b>自动回帖状态</b>\n\n` +
+        `开关: ${enabled === 'true' ? '🟢 开启' : '🔴 关闭'}\n` +
+        `每日限额: ${limit} 次 (随机回复)\n` +
+        `优先关键词: ${kws} (命中不计限额)\n\n` +
+        `💡 只有新帖(未回过的)才会被回哦`
+      );
+    }
+    
+    if (action === 'off') {
+      await this.db.setConfig('autoreply_enabled', 'false');
+      return this.reply(chatId, '🔴 <b>自动回帖已关闭</b>');
+    }
+    
+    if (action === 'on') {
+      if (args.length < 3) {
+        return this.reply(chatId, '⛔ 用法: /autoreply on <限额> <关键字1,关键字2...>\n示例: /autoreply on 20 鸡腿,收,出');
+      }
+      const limit = parseInt(args[1]);
+      if (isNaN(limit) || limit < 0) return this.reply(chatId, '⛔ 限额必须是大于等0的整数');
+      
+      const keywords = args.slice(2).join(' ');
+      await this.db.setConfig('autoreply_enabled', 'true');
+      await this.db.setConfig('autoreply_limit', String(limit));
+      await this.db.setConfig('autoreply_keywords', keywords);
+      
+      return this.reply(chatId, 
+        `🟢 <b>自动回帖已开启</b>\n\n` +
+        `每日限额: ${limit} 次\n` +
+        `优先关键词: ${keywords}`
+      );
+    }
+    
+    return this.reply(chatId, '⛔ 用法: /autoreply <on|off|status> [限额] [关键字...]\n示例: /autoreply on 20 鸡腿,收,出');
   }
 
   // ─── Reply ───

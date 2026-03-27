@@ -119,6 +119,27 @@ export class NodeSeek {
   }
 
   /**
+   * 获取最新帖子列表 (用于自动回帖)
+   */
+  async getLatestPosts(): Promise<{ threadId: string; title: string }[]> {
+    try {
+      const res = await fetch('https://www.nodeseek.com/', { headers: this.headers() });
+      if (!res.ok) return [];
+      const html = await res.text();
+      
+      const posts: { threadId: string; title: string }[] = [];
+      const regex = /<a[^>]+href="\/post-(\d+)-\d+"[^>]*class="[^"]*post-title[^"]*"[^>]*>([^<]+)<\/a>/g;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(html)) !== null) {
+        posts.push({ threadId: m[1], title: m[2].trim() });
+      }
+      return posts;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * 顶贴：发送评论
    */
   async bumpThread(threadId: string, content?: string): Promise<boolean> {

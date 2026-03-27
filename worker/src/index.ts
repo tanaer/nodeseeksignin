@@ -130,13 +130,85 @@ async function runScheduledTasks(env: Env): Promise<void> {
       if (await db.isInCooldown(tid)) continue;
 
       if (task.type === 'bump') {
-        await handleBump(tid, task, db, ns, env, myUsername, notifyChatId);
+        await handleBump(tid, task as BumpTask, db, ns, env, myUsername, notifyChatId);
       } else if (task.type === 'monitor') {
-        await handleMonitor(tid, task, db, ns, env, notifyChatId);
+        await handleMonitor(tid, task as any, db, ns, env, notifyChatId);
       }
     } catch (e) {
       console.error(`Task ${tid} error:`, e);
     }
+  }
+
+  // ==================== 全局自动回帖 ====================
+  try {
+    const autoreplyEnabled = await db.getConfig('autoreply_enabled');
+    if (autoreplyEnabled === 'true') {
+      await handleGlobalAutoReply(db, ns, env, notifyChatId);
+    }
+  } catch (e) {
+    console.error(`AutoReply error:`, e);
+  }
+}
+
+async function handleGlobalAutoReply(db: DB, ns: NodeSeek, env: Env, notifyChatId: string): Promise<void> {
+  const limit = parseInt(await db.getConfig('autoreply_limit') || '20');
+  const keywordsStr = await db.getConfig('autoreply_keywords') || '';
+  const keywords = keywordsStr.split(/[,，\|]/).map((k: string) => k.trim()).filter((k: string) => k);
+
+  const posts = await ns.getLatestPosts();
+  if (!posts || posts.length === 0) return;
+
+  // 使用东八区当前日期作为 Key
+  const dateStr = new Date(Date.now() + 8 * 3600 * 1000).toISOString().split('T')[0];
+  let currentCount = await db.getDailyReplyCount(dateStr);
+
+  // 每次 Cron 最多只回复 1~2 帖，防止被拉黑
+  let repliedThisCron = 0;
+
+  for (const post of posts) {
+    if (repliedThisCron >= 2) break; // max 2 per run
+
+    if (await db.hasReplied(post.threadId)) continue;
+    
+    const isKeywordMatch = keywords.some((k: string) => post.title.toLowerCase().includes(k.toLowerCase()));
+    
+    // 如果没有命中关键词，且当日随机次数已满，则跳过
+    if (!isKeywordMatch && currentCount >= limit) {
+      continue;
+    }
+
+    console.log(`自动回复尝试: ${post.title} (命中关键词: ${isKeywordMatch})`);
+    
+    // 执行回复 (内容可以带点随机，这里先走内置的 randomComments)
+    const ok = await ns.bumpThread(post.threadId);
+    if (!ok) {
+      console.log(`自动回复失败: ${post.threadId}`);
+      continue;
+    }
+
+    await db.addRepliedPost(post.threadId);
+    repliedThisCron++;
+
+    let msg = ``;
+    if (isKeywordMatch) {
+      msg = `🤖 <b>关键词捡漏成功</b>\n\n🎯 命中词: ${keywords.join(',')}\n`;
+    } else {
+      currentCount = await db.incrDailyReplyCount(dateStr);
+      msg = `🤖 <b>随机水贴完成</b>\n\n📊 今日进度: ${currentCount} / ${limit}\n`;
+    }
+
+    console.log(`✅ 自动回复成功: ${post.threadId}`);
+
+    if (notifyChatId) {
+       await Notifier.sendTg(
+          env.TG_BOT_TOKEN,
+          notifyChatId,
+          `${msg}📝 标题: ${post.title}\n🔗 链接: https://www.nodeseek.com/post-${post.threadId}-1`
+        );
+    }
+    
+    // 稍微延时防止频率过快
+    await new Promise(r => setTimeout(r, 2000));
   }
 }
 

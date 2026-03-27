@@ -168,4 +168,28 @@ export class DB {
   async setConfig(key: string, value: string): Promise<void> {
     await this.cmd('SET', `ns:config:${key}`, value);
   }
+
+  // ==================== 自动回帖状态管理 ====================
+
+  async hasReplied(threadId: string): Promise<boolean> {
+    const res = await this.cmd('SISMEMBER', 'ns:replied_posts', threadId);
+    return res === 1;
+  }
+
+  async addRepliedPost(threadId: string): Promise<void> {
+    await this.cmd('SADD', 'ns:replied_posts', threadId);
+    // 保留三天防止无限增长
+    await this.cmd('EXPIRE', 'ns:replied_posts', String(3 * 24 * 3600));
+  }
+
+  async getDailyReplyCount(dateStr: string): Promise<number> {
+    const res = await this.cmd('GET', `ns:daily_replies:${dateStr}`);
+    return res ? parseInt(res) : 0;
+  }
+
+  async incrDailyReplyCount(dateStr: string): Promise<number> {
+    const res = await this.cmd('INCR', `ns:daily_replies:${dateStr}`);
+    await this.cmd('EXPIRE', `ns:daily_replies:${dateStr}`, String(2 * 24 * 3600));
+    return res;
+  }
 }
