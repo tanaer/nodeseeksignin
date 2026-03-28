@@ -1,0 +1,7 @@
+{
+  "name": "nodeseek-bot",
+  "private": true,
+  "scripts": {
+    "deploy": "cd worker && npm install && npm run deploy"
+  }
+}
