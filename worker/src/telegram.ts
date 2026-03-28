@@ -15,6 +15,7 @@
  */
 import { DB } from './db';
 import { Env } from './types';
+import { NodeSeek } from './nodeseek';
 
 function genId(): string {
   return Math.random().toString(36).substring(2, 10);
@@ -87,6 +88,9 @@ export class TelegramBot {
       case '/setchat': return this.handleSetChat(chatId, parts.slice(1));
       case '/setcookie': return this.handleSetCookie(chatId, parts.slice(1));
       case '/autoreply': return this.handleAutoReply(chatId, parts.slice(1));
+      case '/check':   return this.handleCheck(chatId);
+      case '/run_bump': return this.handleRunBump(chatId, parts.slice(1));
+      case '/run_watch': return this.handleRunWatch(chatId, parts.slice(1));
     }
   }
 
@@ -124,31 +128,36 @@ export class TelegramBot {
 
     lines.push(
       '🆙 <b>顶贴管理</b>',
-      '<code>/bump 帖子ID 冷却分钟 [最大次数]</code>',
+      '<code>/bump [帖子ID] [冷却分钟] [最大次数]</code>',
       '  最后回复超时自动顶帖',
       '  末位是自己 → 间隔自动 x2',
       '  最大次数可选，0或不填=无限',
-      '<code>/unbump 任务ID</code>',
+      '<code>/unbump [任务ID]</code>',
       '',
       '🔍 <b>关键词监控</b>',
-      '<code>/watch 关键字 tg|pushplus 冷却分钟</code>',
+      '<code>/watch [关键字] tg|pushplus [冷却分钟]</code>',
       '  有新帖时推送通知',
-      '<code>/unwatch 任务ID</code>',
+      '<code>/unwatch [任务ID]</code>',
       '',
       '🤖 <b>自动回帖 (水贴+关键词捡漏)</b>',
       '<code>/autoreply on 20 鸡腿,收,出</code>',
       '  开启自动回帖，每日限额20次',
       '  包含关键字优先回且不计限额',
-      '<code>/autoreply off</code> — 关闭',
-      '<code>/autoreply status</code> — 状态',
+      '<code>/autoreply off</code> — 关闭状态',
+      '<code>/autoreply status</code> — 查看状态',
       '',
       '⚙️ <b>管理</b>',
       '<code>/list</code> — 任务列表',
-      '<code>/pause 任务ID</code> — 暂停',
-      '<code>/resume 任务ID</code> — 恢复',
+      '<code>/pause [任务ID]</code> — 暂停',
+      '<code>/resume [任务ID]</code> — 恢复',
       '<code>/clear</code> — 清空所有任务',
       '<code>/setchat [chat_id]</code> — 设置通知目标',
-      '<code>/setcookie <cookie_string></code> — 更新 NodeSeek Cookie',
+      '<code>/setcookie [cookie_string]</code> — 更新 NodeSeek Cookie',
+      '<code>/check</code> — 🚀 立即触发所有巡检',
+      '',
+      '🧪 <b>单次测试</b>',
+      '<code>/run_bump [帖子ID]</code> — 立即顶贴1次',
+      '<code>/run_watch [关键字]</code> — 立即搜索1次',
       '',
       '💡 <b>示例</b>',
       '<code>/bump 12345 60 10</code>',
@@ -297,7 +306,7 @@ export class TelegramBot {
     
     if (action === 'on') {
       if (args.length < 3) {
-        return this.reply(chatId, '⛔ 用法: /autoreply on <限额> <关键字1,关键字2...>\n示例: /autoreply on 20 鸡腿,收,出');
+        return this.reply(chatId, '⛔ 用法: /autoreply on [限额] [关键字1,关键字2...]\n示例: /autoreply on 20 鸡腿,收,出');
       }
       const limit = parseInt(args[1]);
       if (isNaN(limit) || limit < 0) return this.reply(chatId, '⛔ 限额必须是大于等0的整数');
@@ -314,7 +323,42 @@ export class TelegramBot {
       );
     }
     
-    return this.reply(chatId, '⛔ 用法: /autoreply <on|off|status> [限额] [关键字...]\n示例: /autoreply on 20 鸡腿,收,出');
+    return this.reply(chatId, '⛔ 用法: /autoreply [on|off|status] [限额] [关键字...]\n示例: /autoreply on 20 鸡腿,收,出');
+  }
+
+  // ─── Manual Check & Run ───
+
+  private async handleCheck(chatId: number): Promise<void> {
+    if (this.env.WORKER_URL) {
+      this.reply(chatId, '🚀 <b>正在后台触发巡检...</b>\n请稍候，如果有任务执行会收到通知。');
+      fetch(`${this.env.WORKER_URL}/check`).catch(e => console.error(e));
+      return;
+    }
+    return this.reply(chatId, '⛔ 请在 Cloudflare 设置 <code>WORKER_URL</code> 后使用此命令。');
+  }
+
+  private async handleRunBump(chatId: number, args: string[]): Promise<void> {
+    if (args.length !== 1) return this.reply(chatId, '⛔ 用法: /run_bump [帖子ID]');
+    const cookie = await this.db.getConfig('ns_cookie') || this.env.NS_COOKIE;
+    if (!cookie) return this.reply(chatId, '⛔ 请先使用 /setcookie 设置 Cookie');
+    
+    this.reply(chatId, `🚀 正在对帖子 <code>${args[0]}</code> 尝试执行顶贴...`);
+    const ns = new NodeSeek(cookie);
+    const ok = await ns.bumpThread(args[0]);
+    return this.reply(chatId, ok ? `✅ 帖子 <code>${args[0]}</code> 顶贴成功！` : `❌ 帖子 <code>${args[0]}</code> 顶贴失败 (可能Cookie失效或需等待冷却)`);
+  }
+
+  private async handleRunWatch(chatId: number, args: string[]): Promise<void> {
+    if (args.length === 0) return this.reply(chatId, '⛔ 用法: /run_watch [关键字]');
+    const keyword = args.join(' ');
+    const cookie = await this.db.getConfig('ns_cookie') || this.env.NS_COOKIE;
+    if (!cookie) return this.reply(chatId, '⛔ 请先使用 /setcookie 设置 Cookie');
+
+    this.reply(chatId, `🚀 正在测试搜索关键字: <code>${keyword}</code>`);
+    const ns = new NodeSeek(cookie);
+    const res = await ns.searchLatest(keyword);
+    if (!res) return this.reply(chatId, `❌ 未找到关于 <code>${keyword}</code> 的任何新帖`);
+    return this.reply(chatId, `✅ <b>搜索测试成功</b>\n\n📝 标题: ${res.title}\n🔗 链接: <a href="${res.link}">点击这里</a>\n🕒 距今: ${res.diffMinutes.toFixed(1)} 分钟`);
   }
 
   // ─── Reply ───
