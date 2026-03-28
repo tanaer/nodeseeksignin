@@ -165,10 +165,10 @@ class NodeSeekCrawler:
                     time.sleep(2)
 
                     # 如果有分页，找最后一页
-                    page_links = page.locator('.pagination a.page-link').all()
+                    page_links = page.locator('.pager-pos').all()
                     max_page = 1
-                    for a in page_links:
-                        text = a.inner_text().strip()
+                    for link in page_links:
+                        text = link.inner_text().strip()
                         if text.isdigit():
                             max_page = max(max_page, int(text))
                     

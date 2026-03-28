@@ -47,7 +47,7 @@ export class NodeSeek {
       let html = await res.text();
 
       // 获取最大页数
-      const pageRegex = /<a[^>]+href="\/post-\d+-(\d+)"[^>]*class="[^"]*page-link[^"]*"[^>]*>/g;
+      const pageRegex = /aria-label="page(\d+)"/g;
       let maxPage = 1;
       let pm: RegExpExecArray | null;
       while ((pm = pageRegex.exec(html)) !== null) {
