@@ -164,6 +164,20 @@ class NodeSeekCrawler:
                     self._wait_for_cloudflare(page)
                     time.sleep(2)
 
+                    # 如果有分页，找最后一页
+                    page_links = page.locator('.pagination a.page-link').all()
+                    max_page = 1
+                    for a in page_links:
+                        text = a.inner_text().strip()
+                        if text.isdigit():
+                            max_page = max(max_page, int(text))
+                    
+                    if max_page > 1:
+                        page.goto(f"https://www.nodeseek.com/post-{thread_id}-{max_page}",
+                                  wait_until="domcontentloaded")
+                        self._wait_for_cloudflare(page)
+                        time.sleep(2)
+                        
                     # 等待帖子加载
                     page.wait_for_selector('.post-list-item', timeout=15000)
                     posts = page.locator('.post-list-item').all()

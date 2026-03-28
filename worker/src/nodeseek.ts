@@ -38,13 +38,33 @@ export class NodeSeek {
    */
   async getLastReplyInfo(threadId: string): Promise<LastReplyInfo | null> {
     try {
-      const res = await fetch(`https://www.nodeseek.com/post-${threadId}-1`, {
+      let res = await fetch(`https://www.nodeseek.com/post-${threadId}-1`, {
         headers: this.headers(),
         redirect: 'follow',
       });
       if (!res.ok) return null;
 
-      const html = await res.text();
+      let html = await res.text();
+
+      // 获取最大页数
+      const pageRegex = /<a[^>]+href="\/post-\d+-(\d+)"[^>]*class="[^"]*page-link[^"]*"[^>]*>/g;
+      let maxPage = 1;
+      let pm: RegExpExecArray | null;
+      while ((pm = pageRegex.exec(html)) !== null) {
+        const pNum = parseInt(pm[1]);
+        if (!isNaN(pNum) && pNum > maxPage) {
+          maxPage = pNum;
+        }
+      }
+
+      // 如果有分页，获取最后一页内容
+      if (maxPage > 1) {
+        res = await fetch(`https://www.nodeseek.com/post-${threadId}-${maxPage}`, {
+          headers: this.headers(),
+          redirect: 'follow',
+        });
+        if (res.ok) html = await res.text();
+      }
 
       // 提取所有 <time datetime="..."> 和对应的用户名
       // 帖子结构: .post-list-item 包含用户名和时间

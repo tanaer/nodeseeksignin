@@ -85,6 +85,7 @@ export class TelegramBot {
       case '/resume':  return this.handleResume(chatId, parts.slice(1));
       case '/clear':   return this.handleClear(chatId);
       case '/setchat': return this.handleSetChat(chatId, parts.slice(1));
+      case '/setcookie': return this.handleSetCookie(chatId, parts.slice(1));
       case '/autoreply': return this.handleAutoReply(chatId, parts.slice(1));
     }
   }
@@ -147,6 +148,7 @@ export class TelegramBot {
       '<code>/resume 任务ID</code> — 恢复',
       '<code>/clear</code> — 清空所有任务',
       '<code>/setchat [chat_id]</code> — 设置通知目标',
+      '<code>/setcookie <cookie_string></code> — 更新 NodeSeek Cookie',
       '',
       '💡 <b>示例</b>',
       '<code>/bump 12345 60 10</code>',
@@ -259,6 +261,15 @@ export class TelegramBot {
     const targetChatId = args[0] || String(chatId);
     await this.db.setConfig('notify_chat_id', targetChatId);
     return this.reply(chatId, `✅ 通知目标已设为: <code>${targetChatId}</code>`);
+  }
+
+  // ─── SetCookie ───
+
+  private async handleSetCookie(chatId: number, args: string[]): Promise<void> {
+    if (args.length === 0) return this.reply(chatId, '⛔ 用法: /setcookie <你的 NodeSeek Cookie>');
+    const cookie = args.join(' ');
+    await this.db.setConfig('ns_cookie', cookie);
+    return this.reply(chatId, '✅ <b>Cookie 更新成功</b>\n下次巡检生效！');
   }
 
   // ─── AutoReply ───
