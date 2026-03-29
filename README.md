@@ -33,70 +33,40 @@
 3. Actions 将每天自动执行两次：
    - 北京时间 **00:10** 和 **12:20**
 
-### 方式二：Cloudflare Worker 部署（推荐 🚀 免费 + 零运维）
+### 方式二：双核架构部署（推荐 🚀 CF Worker + Docker 组合）
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/tanaer/nodeseeksignin/tree/main/worker)
+此架构将 **Telegram 管理面板**与**真实发发帖爬虫**分离，既能保证操作的随时响应，又能通过容器代理完美绕过防机器人策略。
 
-点击上方按钮即可一键部署到你的 Cloudflare 账号。部署后需在 Worker 设置中添加以下 Secrets：
-
-| Secret | 说明 |
-|--------|------|
-| `TG_BOT_TOKEN` | Telegram Bot Token |
-| `TG_CHAT_ID` | Telegram Chat ID |
-| `NS_COOKIE` | NodeSeek Cookie |
-| `REDIS_URL` | Upstash Redis 连接串（`redis://default:xxx@host:6379`） |
-
-部署完成后访问 `https://your-worker.workers.dev/register` 注册 Webhook，Bot 立即上线 ✅
-
-<details>
-<summary>📋 手动部署（命令行方式）</summary>
-
-无需服务器，一键部署到 Cloudflare Workers，支持 Telegram Bot 命令管理。
-
+**第一步：部署通信端 (Cloudflare Worker)**
+Worker 负责接收并响应你的 Telegram 指令，将配置写入数据库。
 ```bash
 # 1. 克隆仓库并进入 Worker 目录
 git clone https://github.com/tanaer/nodeseeksignin.git
 cd nodeseeksignin/worker
 
-# 2. 安装依赖
+# 2. 安装依赖并配置 Secrets
 npm install
-
-# 3. 配置 Secrets（在 Cloudflare Dashboard 或命令行设置）
 npx wrangler secret put TG_BOT_TOKEN
 npx wrangler secret put TG_CHAT_ID
 npx wrangler secret put NS_COOKIE
 npx wrangler secret put REDIS_URL      # 格式: redis://default:TOKEN@host:6379
 
-# 4. 部署
+# 3. 部署并注册 Webhook
 npx wrangler deploy
-
-# 5. 注册 Telegram Webhook（部署后访问以下地址）
-# https://your-worker.workers.dev/register
+# 部署完成后访问: https://你的Worker域名.workers.dev/register 注册Webhook
 ```
 
-> 💡 部署完成后，访问 `https://your-worker.workers.dev/register` 即可一键注册 Webhook。
-
-</details>
-
-### 方式三：Python Bot 常驻部署（需 VPS）
-
+**第二步：启动执行端 (Docker 守护进程)**
+Python 守护进程负责在本地/服务器静默抓取、顶贴和自动回复。内置了 MicroWARP 代理防封。
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/tanaer/nodeseeksignin.git
-cd nodeseeksignin
+# 回到根目录
+cd ..
 
-# 2. 安装依赖
-pip install -r requirements.txt
-python -m camoufox fetch   # 下载 Camoufox 浏览器内核
+# 配置环境变量 (或者直接修改 docker-compose.yml 里的 environemnt)
+export REDIS_URL="redis://default:xxx@host:6379"
 
-# 3. 配置环境变量（见下方表格）
-export NS_COOKIE="your_cookie_here"
-export TG_BOT_TOKEN="your_bot_token"
-export TG_CHAT_ID="your_chat_id"
-export REDIS_URL="rediss://your_upstash_url"
-
-# 4. 启动 Bot
-python bot.py
+# 一键启动包含 WARP 代理和爬虫守护进程的容器
+docker-compose up -d
 ```
 
 ---

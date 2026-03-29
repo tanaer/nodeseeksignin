@@ -1,5 +1,6 @@
 import time
 import threading
+import os
 from datetime import datetime, timezone
 import urllib.parse
 import traceback
@@ -16,6 +17,15 @@ BUMP_COMMENTS = [
     "祝早出", "观望一下 早出", "bd一下", "bd", "帮顶一下",
     "顶一下", "支持支持", "棒棒哒"
 ]
+
+def get_camoufox_kwargs():
+    """获取带代理配置的 Camoufox 初始化参数"""
+    kwargs = {"headless": config.headless}
+    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+    if proxy_url:
+        kwargs["proxy"] = {"server": proxy_url}
+        print(f"🔌 Camoufox 正在使用代理: {proxy_url}")
+    return kwargs
 
 
 class NodeSeekCrawler:
@@ -157,7 +167,7 @@ class NodeSeekCrawler:
         """
         with self._lock:
             try:
-                with Camoufox(headless=config.headless) as browser:
+                with Camoufox(**get_camoufox_kwargs()) as browser:
                     page = self._open_and_login(browser)
                     page.goto(f"https://www.nodeseek.com/post-{thread_id}-1",
                               wait_until="domcontentloaded")
@@ -185,31 +195,80 @@ class NodeSeekCrawler:
                         return -1
 
                     last_post = posts[-1]
+                    
+                    # 尝试获取最后发帖人的用户名
+                    last_user = ""
+                    user_el = last_post.locator('.username').first
+                    if user_el.count() > 0:
+                        last_user = user_el.inner_text().strip()
+
                     time_els = last_post.locator('time').all()
                     if not time_els:
-                        return -1
+                        return (-1, "")
 
                     date_str = time_els[-1].get_attribute('datetime')
                     if not date_str:
-                        return -1
+                        return (-1, "")
 
                     post_time = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                     now = datetime.now(timezone.utc)
-                    return (now - post_time).total_seconds() / 60.0
+                    return ((now - post_time).total_seconds() / 60.0, last_user)
 
             except Exception as e:
                 print(f"获取帖子 {thread_id} 最后回复时间失败: {e}")
                 traceback.print_exc()
-                return -1
+                return (-1, "")
+
+    def get_my_username(self):
+        """获取当前登录账号的用户名"""
+        with self._lock:
+            try:
+                with Camoufox(**get_camoufox_kwargs()) as browser:
+                    page = self._open_and_login(browser)
+                    # 顶栏的用户链接
+                    user_link = page.locator('a.nav-item.nav-link[href^="/space/"]').first
+                    if user_link.count() > 0:
+                        return user_link.inner_text().strip()
+                    return ""
+            except Exception:
+                return ""
+
+    def get_latest_posts(self):
+        """获取首页或最新帖子列表 (用于全局自动回帖)"""
+        with self._lock:
+            try:
+                with Camoufox(**get_camoufox_kwargs()) as browser:
+                    page = self._open_and_login(browser)
+                    page.goto("https://www.nodeseek.com/recent", wait_until="domcontentloaded")
+                    self._wait_for_cloudflare(page)
+                    time.sleep(2)
+                    
+                    result = []
+                    posts = page.locator('.post-list-item').all()
+                    for p in posts[:20]: # 取前二十条
+                        title_loc = p.locator('.post-title a').first
+                        if title_loc.count() == 0: continue
+                        title = title_loc.inner_text().strip()
+                        href = title_loc.get_attribute('href')
+                        if not href: continue
+                        
+                        thread_id = href.split('-')[1] if 'post-' in href else ""
+                        if not thread_id: continue
+                        
+                        result.append({"title": title, "thread_id": thread_id})
+                    return result
+            except Exception as e:
+                print(f"获取最新帖子失败: {e}")
+                return []
 
     def bump_thread(self, thread_id, content=None):
-        """在指定主题下发送评论以实现顶贴"""
+        """在指定主题下发送评论以实现回复或顶贴"""
         if content is None:
             content = random.choice(BUMP_COMMENTS)
 
         with self._lock:
             try:
-                with Camoufox(headless=config.headless) as browser:
+                with Camoufox(**get_camoufox_kwargs()) as browser:
                     page = self._open_and_login(browser)
 
                     # 导航到最后一页（帖子末尾）
@@ -231,7 +290,11 @@ class NodeSeekCrawler:
                             if (cm) { cm.setValue(text); }
                         }''', content)
                     except Exception:
-                        editor.type(content, delay=80)
+                        try:
+                            editor.type(content, delay=80)
+                        except Exception:
+                            # 实在不行备选框
+                            page.locator('.CodeMirror-code').fill(content)
 
                     time.sleep(1)
 
@@ -240,10 +303,7 @@ class NodeSeekCrawler:
                         "button.submit.btn:has-text('发布评论')"
                     )
                     if submit.count() == 0:
-                        # XPath 备用
-                        submit = page.locator(
-                            "xpath=//button[contains(@class,'submit') and contains(text(),'发布评论')]"
-                        )
+                        submit = page.locator("button.submit:has-text('发布评论')")
                     submit.scroll_into_view_if_needed()
                     time.sleep(0.3)
                     submit.click()
@@ -263,7 +323,7 @@ class NodeSeekCrawler:
         """
         with self._lock:
             try:
-                with Camoufox(headless=config.headless) as browser:
+                with Camoufox(**get_camoufox_kwargs()) as browser:
                     page = self._open_and_login(browser)
 
                     q = urllib.parse.quote(keyword)
