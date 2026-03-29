@@ -10,7 +10,15 @@ class DBManager:
             self.redis = None
             print("⚠️ 未配置 REDIS_URL, 部分功能无法正常工作")
         else:
-            self.redis = redis.Redis.from_url(redis_url, decode_responses=True)
+            # Upstash strict SSL requirement fix
+            if "upstash.io" in redis_url and redis_url.startswith("redis://"):
+                redis_url = redis_url.replace("redis://", "rediss://", 1)
+                
+            try:
+                self.redis = redis.Redis.from_url(redis_url, decode_responses=True)
+            except Exception as e:
+                self.redis = None
+                print(f"⚠️ Redis 连接初始化失败: {e}")
 
     def set_config(self, key: str, value: str):
         if self.redis: self.redis.set(f"ns:{key}", value)
