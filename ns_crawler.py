@@ -21,7 +21,7 @@ BUMP_COMMENTS = [
 def get_camoufox_kwargs():
     """获取带代理配置的 Camoufox 初始化参数"""
     kwargs = {"headless": config.headless}
-    proxy_url = os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+    proxy_url = os.environ.get("SOCKS_PROXY") or os.environ.get("HTTP_PROXY")
     if proxy_url:
         kwargs["proxy"] = {"server": proxy_url}
         print(f"🔌 Camoufox 正在使用代理: {proxy_url}")

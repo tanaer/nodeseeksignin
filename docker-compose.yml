@@ -3,15 +3,15 @@ version: '3.8'
 services:
   # MicroWARP 提供 Cloudflare WARP 出口代理，避免服务器 IP 被 NodeSeek 阻断
   warp:
-    image: ccbkkb/microwarp
+    image: ghcr.io/ccbkkb/microwarp:latest
     restart: always
     cap_add:
       - NET_ADMIN
+      - SYS_MODULE
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
-      - "40000:40000" # SOCKS5
-      - "40001:40001" # HTTP
+      - "1080:1080" # SOCKS5
 
   # 执行日常签到、水贴、顶贴和监控检查的常驻爬虫守护进程
   nodeseek-daemon:
@@ -20,8 +20,8 @@ services:
     environment:
       # Upstash Redis 连接串
       - REDIS_URL=${REDIS_URL}
-      # HTTP / HTTPS 请求全部走 WARP 代签，绕过 CF 被拦概率
-      - HTTP_PROXY=http://warp:40001
-      - HTTPS_PROXY=http://warp:40001
+      - TG_BOT_TOKEN=${TG_BOT_TOKEN}
+      # HTTP / HTTPS 请求全部走 WARP 代理，绕过 CF 被拦概率 (MicroWARP 仅支持 SOCKS5)
+      - SOCKS_PROXY=socks5://warp:1080
     depends_on:
       - warp
