@@ -25,5 +25,5 @@ RUN camoufox fetch
 # 复制代码
 COPY . .
 
-# 通过 xvfb 运行守护进程（如果是无头模式可以直跑，但xvfb更稳妥）
-CMD ["xvfb-run", "python", "-u", "daemon.py"]
+# 通过 python 直接运行守护进程 (Camoufox 内置 headless 模式，不需要 xvfb)
+CMD ["python", "-u", "daemon.py"]
