@@ -20,7 +20,7 @@ BUMP_COMMENTS = [
 
 def get_camoufox_kwargs():
     """获取带代理配置的 Camoufox 初始化参数"""
-    kwargs = {"headless": config.headless}
+    kwargs = {"headless": config.headless, "geoip": True}
     proxy_url = os.environ.get("SOCKS_PROXY") or os.environ.get("HTTP_PROXY")
     if proxy_url:
         kwargs["proxy"] = {"server": proxy_url}
@@ -150,10 +150,19 @@ class NodeSeekCrawler:
         """打开首页、注入 Cookie、刷新并验证 CF"""
         page = browser.new_page()
         page.set_viewport_size({"width": 1920, "height": 1080})
-        page.goto('https://www.nodeseek.com', wait_until="domcontentloaded")
-        time.sleep(2)
-        self._setup_cookies(page)
-        page.reload(wait_until="domcontentloaded")
+        # 放宽默认超时设置至 60 秒
+        page.set_default_timeout(60000)
+        page.set_default_navigation_timeout(60000)
+        
+        try:
+            page.goto('https://www.nodeseek.com', wait_until="domcontentloaded")
+            time.sleep(2)
+            self._setup_cookies(page)
+            # reload 容易在 CF 的 meta 跳转前超时，加个 try catch 无视它
+            page.reload(wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            print(f"🌐 页面导航或加载提示: {e}")
+            
         time.sleep(2)
         self._wait_for_cloudflare(page)
         return page
