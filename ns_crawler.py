@@ -75,15 +75,20 @@ class NodeSeekCrawler:
             if "Just a moment" not in title and "Attention Required" not in title:
                 return True
 
-            print("🛡️ 检测到 Cloudflare 防火墙，等待自动通过...")
-
-            # 靠 Camoufox 指纹能力自动通过
+            print("检查是否有 Cloudflare 拦截...")
+            time.sleep(3)
             for i in range(max_wait // 3):
+                try:
+                    title = page.title()
+                    if "Just a moment" not in title and "Attention Required" not in title:
+                        print(f"✅ 页面已放行 / CF验证通过 (当前标题: {title})")
+                        return True
+                    print(f"⏳ 仍在等待 CF 验证... (第 {i+1} 次检查, 标题: {title})")
+                except Exception as e:
+                    print(f"⚠️ 检查页面状态时发生异常: {e}")
+                    try: page.screenshot(path=f"cf_error_{int(time.time())}.png")
+                    except: pass
                 time.sleep(3)
-                title = page.title()
-                if "Just a moment" not in title and "Attention Required" not in title:
-                    print(f"✅ CF 自动验证通过 (等待了约 {(i+1)*3} 秒)")
-                    return True
 
             # 超时 → 2Captcha 兜底
             print("⚠️ 自动验证超时，启动 2Captcha Turnstile 兜底...")
@@ -155,13 +160,17 @@ class NodeSeekCrawler:
         page.set_default_navigation_timeout(60000)
         
         try:
-            page.goto('https://www.nodeseek.com', wait_until="domcontentloaded")
-            time.sleep(2)
-            self._setup_cookies(page)
-            # reload 容易在 CF 的 meta 跳转前超时，加个 try catch 无视它
+            page.goto('https://www.nodeseek.com', wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            print(f"🌐 初始页面访问超时: {e}")
+
+        time.sleep(2)
+        self._setup_cookies(page)
+        # reload 容易在 CF 的 meta 跳转前超时，加个 try catch 无视它
+        try:
             page.reload(wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
-            print(f"🌐 页面导航或加载提示: {e}")
+            print(f"🌐 页面注入后重新加载超时: {e}")
             
         time.sleep(2)
         self._wait_for_cloudflare(page)
@@ -178,10 +187,19 @@ class NodeSeekCrawler:
             try:
                 with Camoufox(**get_camoufox_kwargs()) as browser:
                     page = self._open_and_login(browser)
-                    page.goto(f"https://www.nodeseek.com/post-{thread_id}-1",
-                              wait_until="domcontentloaded")
+                    try:
+                        page.goto(f"https://www.nodeseek.com/post-{thread_id}-1",
+                                  wait_until="domcontentloaded", timeout=60000)
+                    except Exception as e:
+                        print(f"帖子导航超时提示: {e}")
+                    
                     self._wait_for_cloudflare(page)
                     time.sleep(2)
+                    
+                    if not page.is_visible('.post-list-item') and not page.is_visible('.pager-pos'):
+                        # 截个图备查究竟卡在了哪个页面
+                        try: page.screenshot(path="error_reply.png")
+                        except: pass
 
                     # 如果有分页，找最后一页
                     page_links = page.locator('.pager-pos').all()
