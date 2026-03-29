@@ -15,7 +15,6 @@
  */
 import { DB } from './db';
 import { Env } from './types';
-import { NodeSeek } from './nodeseek';
 
 function genId(): string {
   return Math.random().toString(36).substring(2, 10);
@@ -329,36 +328,24 @@ export class TelegramBot {
   // ─── Manual Check & Run ───
 
   private async handleCheck(chatId: number): Promise<void> {
-    if (this.env.WORKER_URL) {
-      this.reply(chatId, '🚀 <b>正在后台触发巡检...</b>\n请稍候，如果有任务执行会收到通知。');
-      fetch(`${this.env.WORKER_URL}/check`).catch(e => console.error(e));
-      return;
-    }
-    return this.reply(chatId, '⛔ 请在 Cloudflare 设置 <code>WORKER_URL</code> 后使用此命令。');
+    await this.db.setConfig('force_run', 'true');
+    return this.reply(chatId, '🚀 <b>已在数据库标记立即巡检</b>\n常驻守护进程(Python)将在一分钟内捕获并执行全盘扫描。');
   }
 
   private async handleRunBump(chatId: number, args: string[]): Promise<void> {
     if (args.length !== 1) return this.reply(chatId, '⛔ 用法: /run_bump [帖子ID]');
-    const cookie = await this.db.getConfig('ns_cookie') || this.env.NS_COOKIE;
-    if (!cookie) return this.reply(chatId, '⛔ 请先使用 /setcookie 设置 Cookie');
     
-    this.reply(chatId, `🚀 正在对帖子 <code>${args[0]}</code> 尝试执行顶贴...`);
-    const ns = new NodeSeek(cookie);
-    const ok = await ns.bumpThread(args[0]);
-    return this.reply(chatId, ok ? `✅ 帖子 <code>${args[0]}</code> 顶贴成功！` : `❌ 帖子 <code>${args[0]}</code> 顶贴失败 (可能Cookie失效或需等待冷却)`);
+    // 写入特权执行任务，等 Daemon 捕获
+    await this.db.setConfig('test_bump', args[0]);
+    return this.reply(chatId, `🚀 <b>已发起单次顶贴测试</b>\n帖子 <code>${args[0]}</code> 将在下一轮被 Daemon 执行测试并回传结果。`);
   }
 
   private async handleRunWatch(chatId: number, args: string[]): Promise<void> {
     if (args.length === 0) return this.reply(chatId, '⛔ 用法: /run_watch [关键字]');
     const keyword = args.join(' ');
-    const cookie = await this.db.getConfig('ns_cookie') || this.env.NS_COOKIE;
-    if (!cookie) return this.reply(chatId, '⛔ 请先使用 /setcookie 设置 Cookie');
 
-    this.reply(chatId, `🚀 正在测试搜索关键字: <code>${keyword}</code>`);
-    const ns = new NodeSeek(cookie);
-    const res = await ns.searchLatest(keyword);
-    if (!res) return this.reply(chatId, `❌ 未找到关于 <code>${keyword}</code> 的任何新帖`);
-    return this.reply(chatId, `✅ <b>搜索测试成功</b>\n\n📝 标题: ${res.title}\n🔗 链接: <a href="${res.link}">点击这里</a>\n🕒 距今: ${res.diffMinutes.toFixed(1)} 分钟`);
+    await this.db.setConfig('test_watch', keyword);
+    return this.reply(chatId, `🚀 <b>已发起单次搜索测试</b>\n关键字 <code>${keyword}</code> 将被 Daemon 执行测试并回传结果。`);
   }
 
   // ─── Reply ───
